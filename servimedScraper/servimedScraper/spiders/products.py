@@ -3,7 +3,13 @@ import json
 from http.cookies import SimpleCookie
 import logging
 from servimedScraper.utils.jwt import decode_jwt
-from servimedScraper.utils.requests import req_login, req_clientIds, req_products
+from servimedScraper.utils.xcart import generate_x_cart
+from servimedScraper.utils.requests import (
+    req_login,
+    req_clientIds,
+    req_products,
+    req_timestamp,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +31,8 @@ class ProductsSpider(scrapy.Spider):
             "user_code": None,
             "external_code": None,
             "users": [],
+            "timestamp": None,
+            "x-cart": None,
         }
 
     async def start(self):
@@ -42,8 +50,10 @@ class ProductsSpider(scrapy.Spider):
         )
 
     def after_login(self, response):
+
         try:
             data = response.json()
+            print(json.dumps(data, indent=2))
 
         except Exception:
             data = json.loads(response.text or "{}")
@@ -88,11 +98,20 @@ class ProductsSpider(scrapy.Spider):
             self.logger.error("Não consegui obter token/cookie após login.")
             return
 
-        page = 1
+        yield req_timestamp(
+            self.api_base,
+            callback=self.set_xcart,
+            errback=self.on_client_error,
+        )
+
+    def set_xcart(self, response):
+        data = response.json()
+        self.state["timestamp"] = data["timestamp"]
+        self.state["x-cart"] = generate_x_cart(self.state["timestamp"])
         yield req_clientIds(
             self.api_base,
             self.state,
-            page,
+            1,
             callback=self.find_valid_clientId,
             errback=self.on_client_error,
         )

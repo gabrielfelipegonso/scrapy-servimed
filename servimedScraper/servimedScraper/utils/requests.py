@@ -1,4 +1,5 @@
 from scrapy.http import JsonRequest
+import scrapy
 
 
 def req_login(api_base: str, usuario: str, senha: str, *, callback, errback):
@@ -31,6 +32,16 @@ def req_clientIds(api_base: str, state: dict, page: int, *, callback, errback):
     )
 
 
+def req_timestamp(api_base: str, *, callback, errback):
+    return scrapy.Request(
+        url=f"{api_base}/api/Produto/get-timestamp",
+        method="GET",
+        callback=callback,
+        errback=errback,
+        meta={"needs_auth": True},
+    )
+
+
 def req_products(
     api_base: str, state: dict, page: int, item: dict, *, callback, errback
 ):
@@ -59,8 +70,8 @@ def req_products(
             "list": True,
         },
         headers={
-            "x-peperone": "1753806772560",
-            "x-cart": "61f3a5133570647a8f31df0db83cbc648a075760a82064b14dcb8b039c6c1251",
+            "x-peperone": str(state["timestamp"]),
+            "x-cart": str(state["x-cart"]),
         },
         meta={"needs_auth": True},
         cb_kwargs={"page": page, "clientID": item["codigo"], "item": item},
