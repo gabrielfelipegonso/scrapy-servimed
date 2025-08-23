@@ -87,6 +87,8 @@ $env:SERVIMED_PASS="minha_senha"
 
 ## 🕷️ Executando o Spider
 
+Após ativar o ambiente virtual e acessar no seu terminal a pasta que contém o script run_spider.py (servimedScraper\servimedScraper)
+
 ### Opção A – Usando a CLI do Scrapy
 ```bash
 scrapy crawl products -a usuario="meu@email.com" -a senha="minha_senha" -o produtos.jsonl -t jsonlines
