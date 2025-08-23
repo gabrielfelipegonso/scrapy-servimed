@@ -50,7 +50,7 @@ scrapy_servimed/
 Clone o repositório e instale as dependências:
 
 ```bash
-git clone https://github.com/gabrielfelipeso/scrapy-servimed.git
+git clone https://github.com/gabrielfelipegonso/scrapy-servimed
 cd scrapy-servimed
 poetry install
 ```
