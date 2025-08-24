@@ -1,6 +1,6 @@
 # 📦 Scrapy Servimed
 
-Crawler desenvolvido com [Scrapy](https://scrapy.org/) para autenticar no portal **Servimed**, buscar clientes ativos e coletar informações de produtos.
+Crawler desenvolvido com [Scrapy](https://scrapy.org/) para fazer login no portal **Servimed**, buscar um id de cliente ativo e coletar informações de produtos gerando dinamicamente um .
 
 ---
 
@@ -81,6 +81,7 @@ export SERVIMED_PASS="minha_senha"
 # Windows (PowerShell)
 $env:SERVIMED_USER="meu@email.com"
 $env:SERVIMED_PASS="minha_senha"
+$env:SERVIMED_SALE_TYPE= '1' ou "2" 
 ```
 
 ---
@@ -101,7 +102,7 @@ python run_spider.py   --usuario "meu@email.com"   --senha "minha_senha"   --out
 
 ---
 
-## 📊 Saída dos dados
+## 📊 Saída dos dadoss
 
 Por padrão, os produtos são exportados em **JSONLines** (`.jsonl`), com um objeto por linha:
 
@@ -117,6 +118,50 @@ python run_spider.py -o produtos.csv -f csv
 ```
 
 ---
+## ⚙️ Parâmetros do run_spider.py
+
+O script run_spider.py permite executar o spider diretamente, sem precisar usar o comando scrapy crawl. Ele aceita diversos parâmetros para configurar a execução:
+
+| Parâmetro       | Atalho | Default         | Descrição                                                                                                                      |
+| --------------- | ------ | ---------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `--usuario`     | `-u`   | `SERVIMED_USER`  | Usuário de login. Pode ser passado na CLI ou via variável de ambiente.                                                         |
+| `--senha`       | `-p`   | `SERVIMED_PASS`  | Senha de login. Pode ser passada na CLI ou via variável de ambiente.                                                           |
+| `--output`      | `-o`   | `produtos.jsonl` | Caminho do arquivo de saída. Aceita qualquer extensão suportada (`.json`, `.jsonl`, `.csv`).                                   |
+| `--format`      | `-f`   | `jsonlines`      | Formato do output (`json`, `jsonlines`, `csv`).                                                                                |
+| `--loglevel`    |        | `INFO`           | Nível de log do Scrapy (`DEBUG`, `INFO`, `WARNING`, `ERROR`).                                                                  |
+| `--concurrency` |        | `8`              | Número máximo de requisições concorrentes (`CONCURRENT_REQUESTS`).                                                             |
+| `--delay`       |        | `0.1`            | Atraso (em segundos) entre requisições (`DOWNLOAD_DELAY`).                                                                     |
+| `--saleType`    | `-s`   | `1`              | Tipo de venda para as requisições de produtos: `0` (à vista) ou `1` (a prazo). Pode ser definido via env `SERVIMED_SALE_TYPE`. |
+
+## 🌍 Variáveis de Ambiente
+
+Além dos parâmetros na linha de comando, você pode configurar o spider através de variáveis de ambiente:
+
+| Variável             | Equivalente CLI | Descrição                                     |
+| -------------------- | --------------- | --------------------------------------------- |
+| `SERVIMED_USER`      | `--usuario`     | Usuário de login do portal Servimed.         |
+| `SERVIMED_PASS`      | `--senha`       | Senha de login do portal Servimed.                               |
+| `SERVIMED_SALE_TYPE` | `--saleType`    | Tipo de venda (`0` = à vista, `1` = a prazo). |
+
+## 📝 Exemplos completos de execução
+### 1. Executando com credenciais direto na CLI
+
+```bash
+  python run_spider.py -u meu.email@dominio.com -p MinhaSenha
+```
+### 2. Alterando o formato de saída
+#### Salvando em JSON
+```bash
+  python run_spider.py -u meu.email@dominio.com -p MinhaSenha -o produtos.json -f json
+```
+#### Salvando em CSV
+```bash
+  python run_spider.py -u meu.email@dominio.com -p MinhaSenha -o produtos.csv -f csv
+```
+
+### 3;Usando variáveis de ambiente (sem passar --usuario/--senha)
+
+
 
 ## 🛠 Boas práticas implementadas
 
