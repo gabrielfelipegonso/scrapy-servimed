@@ -2,6 +2,12 @@
 
 Crawler desenvolvido com [Scrapy](https://scrapy.org/) para fazer login no portal **Servimed**, buscar um id de cliente ativo e coletar informações de produtos gerando dinamicamente um .
 
+## 🔍 Observações acerca do teste
+
+Agradeço a oportunidade de participar do processo seletivo, a prova foi muito bem feita, houve desafios como descobrir como é gerado o X-cart baseado no timestamp, encontrar o token no payload do JWT que é retornado nos cookies ao fazer o login, além de ter acontecido uma pequena instabilidade nos servidores da servimed durante o desenvolvimento.
+
+Ressalto que tive apenas 3 dias para realizar o teste que foi enviado para mim dia 22/08 para entregar no dia 25/08 as 09h e que o teste previa 7 dias, mesmo com o prazo apertado eu me esforcei ao máximo para entregar um projeto organizado e seguindo ao máximo os padrões. Ainda não tive tempo de escrever os testes unitários, nesse momento (dia 24/08) estou partindo para a execução da etapa número 2 por uma decisão de organização de cronograma pessoal minha, mas entendo a importância de escrever testes no repositório no dia a dia de trabalho. 
+
 ---
 
 ## ✨ Funcionalidades
