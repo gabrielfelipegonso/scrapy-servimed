@@ -6,7 +6,7 @@ import subprocess
 from pathlib import Path
 from threading import Thread
 import logging
-from servimedQueue.requests import postProduct
+from servimedQueue.utils import postProduct
 
 PY = sys.executable
 
@@ -18,14 +18,14 @@ def _drain_stderr(proc):
         sys.stderr.write(line)
 
 
-def main():
-
-    usuario = os.getenv("SERVIMED_USER") or "juliano@farmaprevonline.com.br"
-    senha = os.getenv("SERVIMED_PASS") or "a007299A"
-    sale_type = int(os.getenv("SERVIMED_SALE_TYPE", "1"))
+def main(ch, method, properties, body):
+    message = json.loads(body.decode("utf-8"))
+    usuario = message["usuario"]
+    senha = message["senha"]
+    sale_type = message.get("tipo de venda", int(os.getenv("SERVIMED_SALE_TYPE", "1")))
     mode = "stream"
     here = Path(__file__).resolve().parent
-    repo_root = here
+    repo_root = here.parent.parent
     candidates = [
         repo_root / "run_spider.py",
         repo_root / "servimedScraper" / "run_spider.py",
@@ -88,7 +88,7 @@ def main():
             print(line, file=sys.stderr)
             continue
         count += 1
-        postProduct()
+        postProduct.postProduct(item, count)
 
     rc = proc.wait()
     if rc not in (0, None):
