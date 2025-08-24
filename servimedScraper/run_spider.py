@@ -47,6 +47,15 @@ def parse_args():
         default=0.1,
         help="DOWNLOAD_DELAY em segundos (default 0.1)",
     )
+    p.add_argument(
+        "--saleType",
+        "-s",
+        type=int,
+        choices=[0, 1],
+        default=int(os.getenv("SERVIMED_SALE_TYPE", 1)),
+        help="Tipo de venda a usar nas requisições (1 (a prazo) ou 2 (a vista)). Default: 1. "
+        "Também pode ser definido via env SERVIMED_SALE_TYPE.",
+    )
     return p.parse_args()
 
 
@@ -55,6 +64,7 @@ def main():
 
     usuario = args.usuario or os.getenv("SERVIMED_USER")
     senha = args.senha or os.getenv("SERVIMED_PASS")
+    sale_type = args.saleType or os.getenv("SERVIMED_SALE_TYPE")
 
     if not usuario or not senha:
         print(
@@ -89,7 +99,7 @@ def main():
 
     process = CrawlerProcess(settings)
 
-    process.crawl(ProductsSpider, usuario=usuario, senha=senha)
+    process.crawl(ProductsSpider, usuario=usuario, senha=senha, sale_type=sale_type)
 
     try:
         process.start()

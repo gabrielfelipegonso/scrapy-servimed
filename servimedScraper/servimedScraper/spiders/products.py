@@ -21,10 +21,11 @@ class ProductsSpider(scrapy.Spider):
 
     api_base = "https://peapi.servimed.com.br"
 
-    def __init__(self, usuario: str, senha: str, *args, **kwargs):
+    def __init__(self, usuario: str, senha: str, sale_type: int, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.usuario = usuario
         self.senha = senha
+        self.sale_type = sale_type if sale_type in (1, 2) else 1
         self.state = {
             "access_token": None,
             "cookie_access_token": None,
@@ -138,6 +139,7 @@ class ProductsSpider(scrapy.Spider):
                     self.state,
                     page,
                     item,
+                    self.sale_type,
                     callback=self.parse_products,
                     errback=self.on_client_error,
                 )
@@ -172,6 +174,7 @@ class ProductsSpider(scrapy.Spider):
             self.state,
             page,
             item,
+            self.sale_type,
             callback=self.parse_products,
             errback=self.on_client_error,
         )

@@ -43,7 +43,14 @@ def req_timestamp(api_base: str, *, callback, errback):
 
 
 def req_products(
-    api_base: str, state: dict, page: int, item: dict, *, callback, errback
+    api_base: str,
+    state: dict,
+    page: int,
+    item: dict,
+    saleType: int,
+    *,
+    callback,
+    errback,
 ):
     return JsonRequest(
         url=f"{api_base}/api/carrinho/oculto?siteVersion=4.0.27",
@@ -54,7 +61,7 @@ def req_products(
             "ordenarDecrescente": False,
             "colunaOrdenacao": "nenhuma",
             "clienteId": item["codigo"],
-            "tipoVendaId": 1,
+            "tipoVendaId": saleType,
             "pIIdFiltro": 0,
             "cestaPPFiltro": False,
             "codigoExterno": 0,
