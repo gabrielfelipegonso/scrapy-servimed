@@ -51,7 +51,7 @@ def parse_args():
         "--saleType",
         "-s",
         type=int,
-        choices=[0, 1],
+        choices=[1, 2],
         default=int(os.getenv("SERVIMED_SALE_TYPE", 1)),
         help="Tipo de venda a usar nas requisições (1 (a prazo) ou 2 (a vista)). Default: 1. "
         "Também pode ser definido via env SERVIMED_SALE_TYPE.",

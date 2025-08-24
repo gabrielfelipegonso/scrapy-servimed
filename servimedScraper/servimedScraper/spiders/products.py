@@ -54,7 +54,6 @@ class ProductsSpider(scrapy.Spider):
 
         try:
             data = response.json()
-            print(json.dumps(data, indent=2))
 
         except Exception:
             data = json.loads(response.text or "{}")
