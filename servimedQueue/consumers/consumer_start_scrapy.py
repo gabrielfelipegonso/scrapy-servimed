@@ -9,11 +9,11 @@ load_dotenv()
 
 class ConsumerServimed:
     def __init__(self, callback) -> None:
-        self.host = os.getenv("RABBIT_HOST", "localhost")
-        self.port = int(os.getenv("RABBIT_PORT", "5672"))
-        self.user = os.getenv("RABBIT_USER", "guest")
-        self.password = os.getenv("RABBIT_PASS", "guest")
-        self.queue = os.getenv("RABBIT_QUEUE", "servimed")
+        self.host = os.getenv("RABBIT_HOST")
+        self.port = int(os.getenv("RABBIT_PORT"))
+        self.user = os.getenv("RABBIT_USER")
+        self.password = os.getenv("RABBIT_PASS")
+        self.queue = os.getenv("RABBIT_QUEUE")
         self.callback = callback
         self.channel = self._create_channel()
         self._setup_consumer()
@@ -33,7 +33,7 @@ class ConsumerServimed:
 
         self.channel.basic_consume(
             queue=self.queue,
-            auto_ack=True,
+            auto_ack=False,
             on_message_callback=self.callback,
         )
 
