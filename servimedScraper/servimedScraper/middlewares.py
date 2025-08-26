@@ -1,5 +1,9 @@
 from scrapy import signals
 import json
+from dotenv import load_dotenv
+
+load_dotenv()
+
 
 class ServimedscraperSpiderMiddleware:
 
@@ -69,7 +73,7 @@ class ServimedscraperDownloaderMiddleware:
         return response
 
     def process_exception(self, request, exception, spider):
-   
+
         pass
 
     def spider_opened(self, spider):

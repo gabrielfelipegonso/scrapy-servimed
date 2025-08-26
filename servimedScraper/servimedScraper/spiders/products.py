@@ -10,6 +10,10 @@ from servimedScraper.utils.requests import (
     req_products,
     req_timestamp,
 )
+from dotenv import load_dotenv
+import re
+
+load_dotenv()
 
 logger = logging.getLogger(__name__)
 
@@ -154,32 +158,38 @@ class ProductsSpider(scrapy.Spider):
                 errback=self.on_client_error,
             )
 
-    def parse_products(self, response, page, clientID, item):
-        products = response.json()["lista"]
-        if not products:
-            return
-        page = page + 1
-        for product in products:
-            yield {
-                "gtin": product["codigoBarras"],
-                "codigo": product["codigoExterno"],
-                "descricao": product["descricao"],
-                "preco_fabrica": product["precoVenda"],
-                "estoque": product["quantidadeEstoque"],
-            }
-
-        yield req_products(
-            self.api_base,
-            self.state,
-            page,
-            item,
-            self.sale_type,
-            callback=self.parse_products,
-            errback=self.on_client_error,
-        )
-
     def on_login_error(self, failure):
         self.logger.error(f"Erro no login: {failure!r}")
 
     def on_client_error(self, failure):
         self.logger.error(f"Erro ao chamar carrinho/oculto: {failure!r}")
+
+    def parse_products(self, response, page, clientID, item):
+        products = response.json().get("lista", [])
+        if not products:
+            return
+        page = page + 1
+
+        for product in products:
+            raw_gtin = re.sub(r"\D", "", str(product.get("codigoBarras", "")).strip())
+            if not raw_gtin:
+                continue
+
+            gtin_min8 = raw_gtin.zfill(8)
+
+            yield {
+                "gtin": gtin_min8,
+                "codigo": str(product.get("codigoExterno", "")),
+                "descricao": str(product.get("descricao", "")),
+                "preco_fabrica": float(product.get("valorBase", 0) or 0),
+                "estoque": int(product.get("quantidadeEstoque", 0) or 0),
+            }
+            yield req_products(
+                self.api_base,
+                self.state,
+                page,
+                item,
+                self.sale_type,
+                callback=self.parse_products,
+                errback=self.on_client_error,
+            )

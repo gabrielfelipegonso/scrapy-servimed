@@ -6,16 +6,30 @@ from typing import Optional, Dict
 
 import requests
 
+# ---------- logging com nível por ENV ----------
+_LOG_LEVEL_NAME = os.getenv("LOG_LEVEL", "INFO").upper()
+_LOG_LEVEL = getattr(logging, _LOG_LEVEL_NAME, logging.INFO)
+
 logger = logging.getLogger(__name__)
 if not logger.handlers:
     logging.basicConfig(
-        level=os.getenv("LOG_LEVEL", "INFO"),
+        level=_LOG_LEVEL,
         format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
     )
 
 
 class AuthError(Exception):
     pass
+
+
+def _env_int(name: str, default: int) -> int:
+    v = os.getenv(name)
+    if v is None:
+        return default
+    try:
+        return int(v)
+    except (TypeError, ValueError):
+        return default
 
 
 class AuthClient:
@@ -34,8 +48,8 @@ class AuthClient:
         client_id: Optional[str] = None,
         client_secret: Optional[str] = None,
         scope: Optional[str] = "",
-        timeout: int = os.getenv("TIMEOUT") or 30,
-        expiry_skew: int = os.getenv("EXPIRE_TOKEN_TIME") or 20,
+        timeout: Optional[int] = None,
+        expiry_skew: Optional[int] = None,
         session: Optional[requests.Session] = None,
     ):
 
@@ -47,8 +61,15 @@ class AuthClient:
             "API_CLIENT_SECRET_COTE", "None"
         )
         self.scope = scope if scope is not None else os.getenv("API_SCOPE_COTE", "")
-        self.timeout = timeout
-        self.expiry_skew = expiry_skew
+
+        self.timeout = int(timeout) if timeout is not None else _env_int("TIMEOUT", 30)
+
+        self.expiry_skew = (
+            int(expiry_skew)
+            if expiry_skew is not None
+            else _env_int("EXPIRE_TOKEN_TIME", 20)
+        )
+
         self.session = session or requests.Session()
         self._token_type: str = "Bearer"
         self._access_token: Optional[str] = None
@@ -126,13 +147,15 @@ class AuthClient:
             raise AuthError("Resposta sem access_token")
 
         token_type = (data.get("token_type") or "Bearer").strip()
+
         try:
-            expires_in = int(data.get("expires_in", 300))
+            expires_in = int(data.get("expires_in", 0))
         except (TypeError, ValueError):
-            expires_in = 300
+            expires_in = 0
 
         self._token_type = token_type or "Bearer"
         self._access_token = access
-        self._exp_ts = time.time() + max(expires_in, 60)
 
-        logger.info("Token obtido (%s); expira em %ss", self._token_type, expires_in)
+        self._exp_ts = time.time() + max(0, expires_in)
+
+        logger.info("Token obtido (%s); expires_in=%ss", self._token_type, expires_in)
