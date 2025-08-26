@@ -14,10 +14,11 @@ dependencies = [
 ]
 [tool.poetry]
 packages = [
-  { include = "servimedScraper" }   # <- esta é a pasta do pacote
+  { include = "servimedqueue" }, 
+  { include = "servimedScraper" }   
 ]
 [build-system]
-requires = ["poetry-core>=2.0.0,<3.0.0"]
+requires = ["poetry-core>=2.0.a0,<3.0.0"]
 build-backend = "poetry.core.masonry.api"
 
 [tool.poetry.group.dev.dependencies]
