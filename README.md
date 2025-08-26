@@ -4,11 +4,13 @@ Crawler desenvolvido com [Scrapy](https://scrapy.org/) para fazer login no porta
 
 ## 🔍 Observações acerca do teste
 
-Agradeço a oportunidade de participar do processo seletivo, a prova foi muito bem feita, houve desafios como descobrir como é gerado o X-cart baseado no timestamp, encontrar o token no payload do JWT que é retornado nos cookies ao fazer o login, além de ter acontecido uma pequena instabilidade nos servidores da servimed durante o desenvolvimento.
+Agradeço a oportunidade de participar do processo seletivo, a prova foi muito bem feita e detalhada e gostei do processo de construir este projeto.
 
-Ressalto que tive apenas 3 dias para realizar o teste que foi enviado para mim dia 22/08 para entregar no dia 25/08 as 09h e que o teste previa 7 dias, mesmo com o prazo apertado eu me esforcei ao máximo para entregar um projeto organizado e seguindo ao máximo os padrões. Ainda não tive tempo de escrever os testes unitários, nesse momento (dia 24/08) estou partindo para a execução da etapa número 2 por uma decisão de organização de cronograma pessoal minha, mas entendo a importância de escrever testes no repositório no dia a dia de trabalho. 
+Fiz as requisições 1 a 1 no scraper até encontrar uma com lista vazia pois isso tornou mais robusto, no primeiro teste que fiz direto à API da servimed o cálculo deles de quantidade total de produtos não batia com a quantidade de páginas máxima.
 
+Sugiro adicionar que o gtin precisa ter pelo menos 8 caracteres e como completar em caso de haver menos. o produto com gtin 450619 tem um código de barras menor do que 8 caracteres.Para entregar a prova eu apenas completei com zeros a esquerda na function  parse_products do spider.
 ---
+# 🕷️ Primeira etapa - Scraper - servimedScraper
 
 ## ✨ Funcionalidades
 - Login com usuário e senha.  
@@ -184,3 +186,138 @@ Além dos parâmetros na linha de comando, você pode configurar o spider atrav�
 ---
 
 
+# 📨 Segunda etapa: Mensageria (RabbitMQ) - servimedQueue
+
+Integra o scraper a um fluxo de mensageria para execução sob demanda e envio do resultado em um único POST (array JSON).
+
+## 🎯 Objetivo
+
+Disparar o scraping por mensagem em fila.
+
+Aguardar o spider concluir.
+
+Enviar todos os itens de uma vez para o endpoint (API_PRODUCTS_URL).
+
+Tratar retries/NACK quando a API estiver indisponível.
+
+## 🧩 Componentes
+servimedQueue/
+├── consumers/
+│   └── consumer_start_scrapy.py   # Conecta no RabbitMQ e escuta a fila de start
+└── utils/
+    ├── worker_stream.py           # Callback: roda o spider e faz um POST único
+    └── auth.py                    # AuthClient (password grant) para obter o token
+
+
+O consumer_start_scrapy usa worker_stream.start_scrap, que:
+
+1) executa run_spider.py,
+2) acumula itens emitidos via stdout (JSONL), 
+3) realiza um POST com o array completo.
+
+🔄 Fluxo
+
+Publica-se uma mensagem JSON na fila RABBIT_QUEUE_SCRAPER:
+
+```json
+{ "usuario": "email@dominio.com", "senha": "secret", "tipo de venda": 1 }
+```
+
+O consumer se inicia e chama o worker
+
+O worker executa o spider e coleta cada linha JSON.
+
+Ao finalizar, o worker POSTA um array para API_PRODUCTS_URL usando AuthClient (Bearer token).
+
+ACK só após POST bem-sucedido.
+
+HTTP 429/5xx → NACK requeue
+
+HTTP 4xx → NACK sem requeue
+
+⚙️ Variáveis de ambiente (mensageria)
+# RabbitMQ
+RABBIT_HOST=localhost
+RABBIT_PORT=5672
+RABBIT_USER=guest
+RABBIT_PASS=guest
+RABBIT_QUEUE_SCRAPER=queue.start_scrapy
+RABBIT_PREFETCH=1
+
+# Timeouts/heartbeats (útil para scrapes longos)
+RABBIT_HEARTBEAT=300
+RABBIT_BLOCKED_TIMEOUT=600
+RABBIT_CONN_ATTEMPTS=5
+RABBIT_RETRY_DELAY=5
+RABBIT_HEARTBEAT_TICK=1.0  # frequência (s) do "tick" de heartbeat no worker
+
+# API destino (POST único com array)
+API_PRODUCTS_URL=https://sua.api.exemplo/produtos
+
+# Auth (password grant) usados por utils/auth.py
+API_TOKEN_URL=https://sso.exemplo/oauth/token
+API_USERNAME_COTE=usuario
+API_PASSWORD_COTE=senha
+API_CLIENT_ID_COTE=
+API_CLIENT_SECRET_COTE=
+API_SCOPE_COTE=
+
+# Scraper
+SERVIMED_SALE_TYPE=1
+LOG_LEVEL=INFO
+
+# Logs do worker (opcionais)
+LOG_EACH_ITEM=false     # true = loga cada item (verboso)
+LOG_EVERY_N=0           # >0 = loga a cada N itens
+
+## ▶️ Como rodar o consumer
+### opção A
+python servimedQueue/consumers/consumer_start_scrapy.py
+
+### opção B (módulo)
+python -m servimedQueue.consumers.consumer_start_scrapy
+
+## 📨 Publicando uma mensagem de teste
+
+```python
+import json, os, pika
+
+conn = pika.BlockingConnection(pika.ConnectionParameters(
+    host=os.getenv("RABBIT_HOST","localhost"),
+    port=int(os.getenv("RABBIT_PORT","5672")),
+    credentials=pika.PlainCredentials(
+        os.getenv("RABBIT_USER","guest"),
+        os.getenv("RABBIT_PASS","guest")
+    )
+))
+ch = conn.channel()
+q = os.getenv("RABBIT_QUEUE_SCRAPER","queue.start_scrapy")
+ch.queue_declare(queue=q, durable=True)
+
+body = json.dumps({
+    "usuario":"meu@email.com",
+    "senha":"minha_senha",
+    "tipo de venda":1
+})
+ch.basic_publish(
+    exchange="",
+    routing_key=q,
+    body=body,
+    properties=pika.BasicProperties(delivery_mode=2) # persistente
+)
+conn.close()
+print("mensagem publicada")
+```
+
+
+## 🧠 Heartbeats e conexões longas
+
+Scrapes demorados podem derrubar a conexão se heartbeats não forem processados.
+
+No consumer, aumente RABBIT_HEARTBEAT e RABBIT_BLOCKED_TIMEOUT.
+
+No worker, há um tick periódico (process_data_events) controlado por RABBIT_HEARTBEAT_TICK para manter a conexão viva durante a execução do spider.
+
+## 🪵 Logs do Scrapy aparecendo como ERROR
+
+O Scrapy loga (INFO/WARNING/…) em stderr. O worker_stream reencaminha preservando o nível para não marcar tudo como ERROR.
