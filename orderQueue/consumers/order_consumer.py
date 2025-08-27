@@ -90,7 +90,6 @@ class ProductPosterConsumer:
 
     @staticmethod
     def _validate_envelope(msg: Any) -> Tuple[str, str, List[JSONItem]]:
-
         errs: List[str] = []
 
         if not isinstance(msg, dict):
