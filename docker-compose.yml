@@ -1,0 +1,58 @@
+services:
+  rabbit:
+    image: rabbitmq:3.13-management
+    container_name: rabbit
+    ports:
+      - "5672:5672"    
+      - "15672:15672"  
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBIT_USER:-guest}
+      RABBITMQ_DEFAULT_PASS: ${RABBIT_PASS:-guest}
+      RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS: "-rabbit consumer_timeout 14400000"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_running"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  consumer-scraper:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: servimed:latest
+    container_name: consumer-scraper
+    depends_on:
+      rabbit:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      RABBIT_HOST: rabbit
+      RABBIT_PORT: 5672
+    command: ["python", "-m", "servimedQueue.run_scraper_consumer"]
+    restart: unless-stopped
+    stop_grace_period: 2m
+
+
+  consumer-orders:
+    image: servimed:latest  
+    container_name: consumer-orders
+    depends_on:
+      rabbit:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      RABBIT_HOST: rabbit
+      RABBIT_PORT: 5672
+      RABBIT_QUEUE_ORDERS: queue.orders
+      API_BASE_URL: https://desafio.cotefacil.net
+      API_TOKEN_URL: ${API_TOKEN_URL}
+      API_USERNAME_COTE: ${API_USERNAME_COTE}
+      API_PASSWORD_COTE: ${API_PASSWORD_COTE}
+      API_CLIENT_ID_COTE: ${API_CLIENT_ID_COTE:-}
+      API_CLIENT_SECRET_COTE: ${API_CLIENT_SECRET_COTE:-}
+      API_SCOPE_COTE: ${API_SCOPE_COTE:-}
+    command: ["python", "-m", "orderQueue.run_order_consumer"]
+    restart: unless-stopped
+    stop_grace_period: 2m

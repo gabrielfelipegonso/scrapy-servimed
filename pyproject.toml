@@ -1,5 +1,5 @@
 [project]
-name = "scrapy-servimed"
+name = "scrapy-servimed-cotefacil"
 version = "0.1.0"
 description = ""
 authors = [
@@ -15,7 +15,9 @@ dependencies = [
 [tool.poetry]
 packages = [
   { include = "servimedqueue" }, 
-  { include = "servimedScraper" }   
+  { include = "servimedScraper" },   
+  { include = "shared" },   
+  { include = "orderQueue" }, 
 ]
 [build-system]
 requires = ["poetry-core>=2.0.a0,<3.0.0"]
