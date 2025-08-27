@@ -13,7 +13,7 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
-from servimedQueue.utils.auth import AuthClient
+from shared.auth import AuthClient
 
 PY = sys.executable
 
