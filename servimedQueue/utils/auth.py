@@ -6,7 +6,6 @@ from typing import Optional, Dict
 
 import requests
 
-# ---------- logging com nível por ENV ----------
 _LOG_LEVEL_NAME = os.getenv("LOG_LEVEL", "INFO").upper()
 _LOG_LEVEL = getattr(logging, _LOG_LEVEL_NAME, logging.INFO)
 

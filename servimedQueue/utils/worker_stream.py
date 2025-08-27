@@ -1,4 +1,3 @@
-# worker_stream.py
 import os
 import sys
 import json
@@ -7,10 +6,13 @@ import subprocess
 from pathlib import Path
 from threading import Thread
 import logging
+import re
+import gzip
+
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
-import re
+
 from servimedQueue.utils.auth import AuthClient
 
 PY = sys.executable
@@ -25,11 +27,35 @@ logger = logging.getLogger(__name__)
 HEARTBEAT_TICK_SECS = float(os.getenv("RABBIT_HEARTBEAT_TICK", "1.0"))
 
 
+def _env_int(name: str, default: int) -> int:
+    try:
+        return int(os.getenv(name, str(default)))
+    except (TypeError, ValueError):
+        return default
+
+
+def _env_bool(name: str, default: bool) -> bool:
+    v = os.getenv(name)
+    if v is None:
+        return default
+    return v.strip().lower() in ("1", "true", "yes", "on")
+
+
+API_CONNECT_TIMEOUT = _env_int("API_CONNECT_TIMEOUT", 10)
+API_READ_TIMEOUT = _env_int("API_READ_TIMEOUT", 300)
+API_RETRY_TOTAL = _env_int("API_RETRY_TOTAL", 1)
+API_RETRY_CONNECT = _env_int("API_RETRY_CONNECT", 2)
+API_RETRY_READ = _env_int("API_RETRY_READ", 1)
+API_POOL_CONN = _env_int("API_POOL_CONN", 10)
+API_POOL_MAX = _env_int("API_POOL_MAX", 20)
+API_POST_GZIP = _env_bool("API_POST_GZIP", True)
+
+
 def _drain_stderr(proc):
     _LEVEL_RE = re.compile(r"\b(DEBUG|INFO|WARNING|ERROR|CRITICAL)\b:")
     if not proc.stderr:
         return
-    level_fn = logger.info  # nível default para linhas de continuação
+    level_fn = logger.info
     for raw in proc.stderr:
         line = raw.rstrip()
         m = _LEVEL_RE.search(line)
@@ -51,15 +77,17 @@ def _drain_stderr(proc):
 def _make_session() -> requests.Session:
     s = requests.Session()
     retry = Retry(
-        total=2,
-        connect=2,
-        read=2,
+        total=API_RETRY_TOTAL,
+        connect=API_RETRY_CONNECT,
+        read=API_RETRY_READ,
         backoff_factor=0.5,
-        status_forcelist=[429, 500, 502, 503, 504],
+        status_forcelist=[408, 429, 500, 502, 503, 504],
         allowed_methods={"POST"},
         raise_on_status=False,
     )
-    adapter = HTTPAdapter(max_retries=retry, pool_connections=10, pool_maxsize=20)
+    adapter = HTTPAdapter(
+        max_retries=retry, pool_connections=API_POOL_CONN, pool_maxsize=API_POOL_MAX
+    )
     s.mount("http://", adapter)
     s.mount("https://", adapter)
     return s
@@ -68,7 +96,27 @@ def _make_session() -> requests.Session:
 SESSION = _make_session()
 
 
+def _safe_ack(ch, tag):
+    try:
+        ch.basic_ack(delivery_tag=tag)
+    except Exception as e:
+        logger.warning("ACK falhou (canal fechado?): %s", e)
+
+
+def _safe_nack(ch, tag, requeue):
+    try:
+        ch.basic_nack(delivery_tag=tag, requeue=requeue)
+    except Exception as e:
+        logger.warning("NACK falhou (canal fechado?): %s", e)
+
+
 def _post_all(items, api_url: str, auth: AuthClient) -> tuple[bool, bool]:
+    """
+    Retorna (ok, requeue):
+      ok=True                 -> ACK
+      ok=False & requeue=True -> NACK requeue (erro temporário)
+      ok=False & requeue=False-> NACK sem requeue (erro definitivo 4xx)
+    """
     if not items:
         logger.info("Nenhum produto coletado; nada a enviar.")
         return True, False
@@ -80,29 +128,77 @@ def _post_all(items, api_url: str, auth: AuthClient) -> tuple[bool, bool]:
     headers.update(auth.auth_header())
 
     logger.info("POSTando %d itens para %s ...", len(items), api_url)
+
     try:
-        resp = SESSION.post(api_url, json=items, headers=headers, timeout=(5, 30))
-    except (requests.Timeout, requests.ConnectionError, requests.SSLError) as e:
+        t0 = time.time()
+        if API_POST_GZIP:
+            payload = json.dumps(items, ensure_ascii=False).encode("utf-8")
+            gz = gzip.compress(payload)
+            headers["Content-Encoding"] = "gzip"
+            resp = SESSION.post(
+                api_url,
+                data=gz,
+                headers=headers,
+                timeout=(API_CONNECT_TIMEOUT, API_READ_TIMEOUT),
+            )
+            dt = time.time() - t0
+            logger.info(
+                "POST gzip concluído em %.1fs (status=%s, req-bytes≈%s)",
+                dt,
+                resp.status_code,
+                len(gz),
+            )
+        else:
+            resp = SESSION.post(
+                api_url,
+                json=items,
+                headers=headers,
+                timeout=(API_CONNECT_TIMEOUT, API_READ_TIMEOUT),
+            )
+            dt = time.time() - t0
+            size = len(resp.request.body) if resp.request and resp.request.body else "?"
+            logger.info(
+                "POST concluído em %.1fs (status=%s, req-bytes≈%s)",
+                dt,
+                resp.status_code,
+                size,
+            )
+
+    except (
+        requests.exceptions.Timeout,
+        requests.exceptions.ConnectionError,
+        requests.exceptions.SSLError,
+    ) as e:
         logger.warning("Erro de rede no POST: %s -> requeue", e)
         return False, True
 
-    if resp.status_code in (429, 500, 502, 503, 504):
+    if resp.status_code in (408, 429, 500, 502, 503, 504):
         logger.warning("HTTP %s do endpoint; requeue.", resp.status_code)
         return False, True
+
     if 400 <= resp.status_code < 500:
-        logger.error(
-            "HTTP %s definitivo; descarta. Body[:400]=%s",
-            resp.status_code,
-            resp.text[:400],
-        )
-        return False, False
-    try:
-        resp.raise_for_status()
-    except requests.HTTPError as e:
-        logger.error("Erro inesperado no POST: %s; descarta.", e)
+        if resp.status_code == 422:
+            try:
+                data = resp.json()
+                errs = data.get("detail", [])
+                sample = [
+                    (e.get("loc"), e.get("msg"), e.get("input")) for e in errs[:10]
+                ]
+                logger.error("422 detalhes (amostra): %s", sample)
+            except Exception:
+                logger.error("422 body: %s", resp.text[:800])
+        else:
+            logger.error(
+                "HTTP %s definitivo; body[:800]=%s", resp.status_code, resp.text[:800]
+            )
         return False, False
 
-    logger.info("POST concluído (status=%s).", resp.status_code)
+    try:
+        resp.raise_for_status()
+    except requests.exceptions.HTTPError as e:
+        logger.error("HTTPError inesperado: %s (body[:800]=%s)", e, resp.text[:800])
+        return False, False
+
     return True, False
 
 
@@ -137,7 +233,7 @@ def start_scrap(ch, method, properties, body: bytes):
             logger.error(
                 "run_spider.py não encontrado na raiz nem em servimedScraper/."
             )
-            ch.basic_nack(delivery_tag=method.delivery_tag, requeue=True)
+            _safe_nack(ch, method.delivery_tag, requeue=True)
             return
 
         cmd = [
@@ -172,7 +268,7 @@ def start_scrap(ch, method, properties, body: bytes):
         )
         if not proc.stdout:
             logger.error("stdout do subprocesso indisponível.")
-            ch.basic_nack(delivery_tag=method.delivery_tag, requeue=True)
+            _safe_nack(ch, method.delivery_tag, requeue=True)
             return
 
         t_err = Thread(target=_drain_stderr, args=(proc,), daemon=True)
@@ -184,7 +280,6 @@ def start_scrap(ch, method, properties, body: bytes):
         for line in proc.stdout:
             line = line.strip()
             if not line:
-
                 if time.monotonic() - last_tick >= HEARTBEAT_TICK_SECS:
                     _tick_heartbeat(ch)
                     last_tick = time.monotonic()
@@ -221,7 +316,7 @@ def start_scrap(ch, method, properties, body: bytes):
 
         if rc not in (0, None):
             logger.error("run_spider.py saiu com código %s; requeue.", rc)
-            ch.basic_nack(delivery_tag=method.delivery_tag, requeue=True)
+            _safe_nack(ch, method.delivery_tag, requeue=True)
             return
 
         logger.info("Spider finalizado. Total de itens: %d", len(items))
@@ -231,18 +326,18 @@ def start_scrap(ch, method, properties, body: bytes):
         ok, requeue = _post_all(items, api_url, auth)
 
         if ok:
-            ch.basic_ack(delivery_tag=method.delivery_tag)
+            _safe_ack(ch, method.delivery_tag)
             logger.info("Mensagem ACK (POST OK).")
         else:
-            ch.basic_nack(delivery_tag=method.delivery_tag, requeue=requeue)
+            _safe_nack(ch, method.delivery_tag, requeue=requeue)
             logger.info("Mensagem NACK (requeue=%s).", requeue)
 
     except json.JSONDecodeError:
         logger.exception("Mensagem inválida (JSON); NACK descarta.")
-        ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
+        _safe_nack(ch, method.delivery_tag, requeue=False)
     except Exception:
         logger.exception("Erro inesperado; NACK requeue.")
-        ch.basic_nack(delivery_tag=method.delivery_tag, requeue=True)
+        _safe_nack(ch, method.delivery_tag, requeue=True)
 
 
 if __name__ == "__main__":
