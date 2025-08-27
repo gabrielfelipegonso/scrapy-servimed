@@ -3,7 +3,9 @@ import json
 from http.cookies import SimpleCookie
 import logging
 from servimedScraper.utils.jwt import decode_jwt
+from scrapy.spidermiddlewares.httperror import HttpError
 from servimedScraper.utils.xcart import generate_x_cart
+from twisted.internet.error import TimeoutError, TCPTimedOutError, DNSLookupError
 from servimedScraper.utils.requests import (
     req_login,
     req_clientIds,
@@ -162,7 +164,24 @@ class ProductsSpider(scrapy.Spider):
         self.logger.error(f"Erro no login: {failure!r}")
 
     def on_client_error(self, failure):
-        self.logger.error(f"Erro ao chamar carrinho/oculto: {failure!r}")
+        req = failure.request
+        page = req.meta.get("page")
+        clientID = req.meta.get("clientID")
+
+        if failure.check(TimeoutError, TCPTimedOutError):
+            self.logger.warning("Timeout na página %s — pulando para a próxima.", page)
+        elif failure.check(DNSLookupError):
+            self.logger.warning("DNS falhou na página %s — pulando.", page)
+        elif failure.check(HttpError):
+            resp = failure.value.response
+            self.logger.warning(
+                "HTTP %s na página %s — pulando.", getattr(resp, "status", "?"), page
+            )
+        else:
+            self.logger.warning("Falha na página %s: %r — pulando.", page, failure)
+
+        if page is not None and clientID:
+            yield self._req_products(page + 1, clientID)
 
     def parse_products(self, response, page, clientID, item):
         products = response.json().get("lista", [])

@@ -1,0 +1,16 @@
+.git
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.log
+*.sqlite
+*.db
+.env
+.venv
+dist/
+build/
+.coverage
+*.egg-info/
+.scrapy/
+tests/

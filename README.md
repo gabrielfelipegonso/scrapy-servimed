@@ -2,6 +2,14 @@
 
 Crawler desenvolvido com [Scrapy](https://scrapy.org/) para fazer login no portal **Servimed**, buscar um id de cliente ativo e coletar informações de produtos gerando dinamicamente um .
 
+## Quais são os projetos
+
+Dentro da cada pasta há uma etapa do desafio:
+
+1) ServimedScraper -> abriga o scraper
+2) servimedQueue -> abria a fila que recebe o usuário e senha da servimed e faz o scraper no usuário da cote que estiver no env.
+3) coteFacilQueue -> Vai receber o pedido e registrar.
+
 ## 🔍 Observações acerca do teste
 
 Agradeço a oportunidade de participar do processo seletivo, a prova foi muito bem feita e detalhada e gostei do processo de construir este projeto.
@@ -9,6 +17,64 @@ Agradeço a oportunidade de participar do processo seletivo, a prova foi muito b
 Fiz as requisições 1 a 1 no scraper até encontrar uma com lista vazia pois isso tornou mais robusto, no primeiro teste que fiz direto à API da servimed o cálculo deles de quantidade total de produtos não batia com a quantidade de páginas máxima.
 
 Sugiro adicionar que o gtin precisa ter pelo menos 8 caracteres e como completar em caso de haver menos. o produto com gtin 450619 tem um código de barras menor do que 8 caracteres.Para entregar a prova eu apenas completei com zeros a esquerda na function  parse_products do spider.
+
+## Um resumo para rodar rapidamente COM DOCKER
+Na raiz do projeto rode:
+```bash
+docker compose up --build -d
+
+```
+
+## Um resumo para rodar rapidamente SEM DOCKER
+Se certifique de ter o poetry instalado, então clone o projeto:
+
+```bash
+git clone https://github.com/gabrielfelipegonso/scrapy-servimed
+cd scrapy-servimed
+poetry install
+```
+Existem outras variáveis de ambiente mas inicialmente configure as qe estão abaixo e funcionará:
+```env
+RABBIT_HOST=localhost
+RABBIT_PORT=5672
+RABBIT_USER=guest
+RABBIT_PASS=guest
+RABBIT_QUEUE_SCRAPER=servimed
+API_TOKEN_URL= "https://desafio.cotefacil.net/oauth/token"
+API_USERNAME_COTE= "seu_usuario"
+API_PASSWORD_COTE= "sua_senha"
+RABBIT_QUEUE_PRODUCTS=post_products_cote_facil
+API_PRODUCTS_URL="https://desafio.cotefacil.net/produto"
+LOG_EVERY_N= 1
+LOG_EACH_ITEM = 1
+RABBIT_HEARTBEAT=300
+RABBIT_BLOCKED_TIMEOUT=600
+RABBIT_PREFETCH=1
+RABBIT_CONN_ATTEMPTS=5
+RABBIT_RETRY_DELAY=5
+RABBIT_HEARTBEAT_TICK=1.0
+```
+
+Ative seu ambiente virtual, é só rodar o comando abaixo, copiar a saída e colar em seu terminal:
+
+```bash
+poetry env activate
+```
+No ambiente ativo você pode rodar os dois projetos, há um arquivo dentro da pasta servimedScraper que serve para rodar apenas o scraper e dá a possibilidade de você rodar e salvar em um jsonl os arquivos, pra rodar o scraper separadamente é só rodar:
+
+```bash
+python run_spider.py   --usuario "meu@email.com"   --senha "minha_senha"   --output produtos.jsonl   --format jsonlines   --loglevel INFO
+```
+E isso vai gerar um arquivo produtos.jsonl na raiz do scraper, mas você pode passar outro endereço caso queira.
+
+Na segunda etapa do desafio é solicitado que rode-se uma fila que espera um usuário e uma senha para começar a receber os produtos. para rodar essa fila é só rodar  o script que esta em servimedQueue e chama run_scraper_consumer.py:
+
+
+```bash
+python run_scraper_consumer.py
+```
+
+
 ---
 # 🕷️ Primeira etapa - Scraper - servimedScraper
 
@@ -321,3 +387,41 @@ No worker, há um tick periódico (process_data_events) controlado por RABBIT_HE
 ## 🪵 Logs do Scrapy aparecendo como ERROR
 
 O Scrapy loga (INFO/WARNING/…) em stderr. O worker_stream reencaminha preservando o nível para não marcar tudo como ERROR.
+
+
+# 📨 TErceira etapa: Mensageria (RabbitMQ) - servimedQueue
+
+Cria pedidos na api cote facil.
+
+
+
+## 🧩 Componentes
+orderQueue/
+├── consumers/
+│   └── run_order_consumer.py   # Conecta no RabbitMQ e escuta a fila de pedidos
+├── run_prder_consumer.py # Roda o consumer
+
+O run_order_onsumer:
+
+1) Lê e valida a mensagem
+2) Autentica na api usando a lib compartilhada 
+3) realiza um POST com o pedido.
+
+🔄 Fluxo
+
+Publica-se uma mensagem JSON na fila RABBIT_QUEUE_PRODUCTS:
+
+```json
+{
+"usuario": "fornecedor_user",
+"senha": "fornecedor_pass",
+"id_pedido": "1234",
+"produtos": [
+{
+"gtin": "1234567890123",
+"codigo": "A123",
+"quantidade": 1,
+}
+```
+
+O consumer se inicia, faz as validações, emite os logs e posta o pedido.
